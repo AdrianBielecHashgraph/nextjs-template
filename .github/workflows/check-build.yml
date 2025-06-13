@@ -1,0 +1,57 @@
+name: Check build
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-merge:
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify commits behind
+        run: |
+          git fetch
+          COMMITS_BEHIND=$(git rev-list --left-only --count origin/$GITHUB_BASE_REF...origin/$GITHUB_HEAD_REF)
+          if [ $COMMITS_BEHIND -gt 0 ]; then echo "source branch is $COMMITS_BEHIND commit(s) behind target branch" && exit 1; fi
+
+  check-build:
+    runs-on: ubuntu-latest
+    environment: development
+    needs: check-merge
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Get pnpm store directory
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Copy .env.example
+        run: cp .env.example .env
+
+      - name: Build app
+        run: pnpm build
